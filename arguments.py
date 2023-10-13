@@ -11,10 +11,10 @@ def get_args():
                                  'split_cifar100',
                                  'mixture'],
                         help='(default=%(default)s)')
-    parser.add_argument('--approach', default='lrp', type=str, required=False,
+    parser.add_argument('--approach', default='gs', type=str, required=False,
                         choices=['ewc',
                                  'si',
-                                 'gs',
+                                 'lrp',
                                  'rwalk',
                                  'mas',
                                  'hat',],

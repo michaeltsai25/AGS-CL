@@ -8,7 +8,7 @@ import math
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from torch._six import inf
+from torch import inf
 import pandas as pd
 from PIL import Image
 from sklearn.feature_extraction import image
@@ -94,10 +94,10 @@ def print_optimizer_config(optim):
 ########################################################################################################################
 def copy_model(model):
     for module_ in model.net:
-        if isinstance(module_, ModuleList):
+        if isinstance(module_, torch.nn.ModuleList()):
             for linear_ in module_:
                 linear_.clean()
-        if isinstance(module_, ReLU) or isinstance(module_, Linear) or isinstance(module_, Conv2d) or isinstance(module_, MaxPool2d) or isinstance(module_, Dropout):
+        if isinstance(module_, torch.nn.ReLU()) or isinstance(module_, torch.nn.Linear()) or isinstance(module_, torch.nn.Conv2d()) or isinstance(module_, torch.nn.MaxPool2d()) or isinstance(module_, torch.nn.Dropout()):
             module_.clean()
 
     return deepcopy(model)
