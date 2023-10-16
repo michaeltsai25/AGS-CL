@@ -41,10 +41,10 @@ tr_output = './result_data/' + log_name + '_train' '.txt'
 # Seed
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(args.seed)
-else:
-    print('[CUDA unavailable]'); sys.exit()
+# if torch.cuda.is_available():
+#     torch.cuda.manual_seed(args.seed)
+# else:
+#     print('[CUDA unavailable]'); sys.exit()
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
@@ -100,7 +100,7 @@ print('\nInput size =', inputsize, '\nTask info =', taskcla)
 
 # Inits
 print('Inits...')
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+torch.set_default_tensor_type('torch.FloatTensor')
 
 if not os.path.isdir('result_data'):
     print('Make directory for saving results')
@@ -110,7 +110,7 @@ if not os.path.isdir('trained_model'):
     print('Make directory for saving trained models')
     os.makedirs('trained_model')
 
-net = network.Net(inputsize, taskcla).cuda()
+net = network.Net(inputsize, taskcla).cpu()
 appr = approach.Appr(net, sbatch=args.batch_size, lr=args.lr, nepochs=args.nepochs, args=args, log_name=log_name)
 
 utils.print_model_report(net)
@@ -130,11 +130,11 @@ for t, ncla in taskcla:
     print('*' * 100)
 
     # Get data
-    xtrain = data[t]['train']['x'].cuda()
-    xvalid = data[t]['valid']['x'].cuda()
+    xtrain = data[t]['train']['x'].cpu()
+    xvalid = data[t]['valid']['x'].cpu()
 
-    ytrain = data[t]['train']['y'].cuda()
-    yvalid = data[t]['valid']['y'].cuda()
+    ytrain = data[t]['train']['y'].cpu()
+    yvalid = data[t]['valid']['y'].cpu()
     task = t
 
     # Train
@@ -143,8 +143,8 @@ for t, ncla in taskcla:
 
     # Test
     for u in range(t + 1):
-        xtest = data[u]['test']['x'].cuda()
-        ytest = data[u]['test']['y'].cuda()
+        xtest = data[u]['test']['x'].cpu()
+        ytest = data[u]['test']['y'].cpu()
         test_loss, test_acc = appr.eval(u, xtest, ytest)
         print('>>> Test on task {:2d} - {:15s}: loss={:.3f}, acc={:5.1f}% <<<'.format(u, data[u]['name'], test_loss,
                                                                                       100 * test_acc))

@@ -5,7 +5,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Continual')
     # Arguments
     parser.add_argument('--seed', type=int, default=0, help='(default=%(default)d)')
-    parser.add_argument('--experiment', default='pmnist', type=str, required=False,
+    parser.add_argument('--experiment', default='split_cifar10_100', type=str, required=False,
                         choices=['omniglot',
                                  'split_cifar10_100',
                                  'split_cifar100',
