@@ -49,6 +49,7 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 # Args -- Experiment
+# Add other if statements to import other datasets
 if args.experiment == 'split_cifar100':
     from dataloaders import split_cifar100 as dataloader
 elif args.experiment == 'split_cifar10_100':

@@ -1,7 +1,6 @@
 import os,sys
 import numpy as np
 import torch
-import utils
 from torchvision import datasets,transforms
 from sklearn.utils import shuffle
 
@@ -20,9 +19,9 @@ def get(seed=0,pc_valid=0.10, tasknum = 10):
         # CIFAR10
         dat={}
         dat['train']=datasets.CIFAR10('../dat/',train=True,download=True,
-                                      transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean,std)]))
+                                        transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean,std)]))
         dat['test']=datasets.CIFAR10('../dat/',train=False,download=True,
-                                     transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean,std)]))
+                                        transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean,std)]))
         data[0]={}
         data[0]['name']='cifar10'
         data[0]['ncla']=10
@@ -44,15 +43,16 @@ def get(seed=0,pc_valid=0.10, tasknum = 10):
     if not os.path.isdir('../dat/binary_split_cifar100/'):
         # CIFAR100
         os.makedirs('../dat/binary_split_cifar100')
+
         dat={}
         
         mean = [0.5071, 0.4867, 0.4408]
         std = [0.2675, 0.2565, 0.2761]
         
         dat['train']=datasets.CIFAR100('../dat/',train=True,download=True,
-                                       transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean,std)]))
+                                        transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean,std)]))
         dat['test']=datasets.CIFAR100('../dat/',train=False,download=True,
-                                       transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean,std)]))
+                                        transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean,std)]))
         for n in range(1,11):
             data[n]={}
             data[n]['name']='cifar100'
@@ -65,7 +65,6 @@ def get(seed=0,pc_valid=0.10, tasknum = 10):
                 task_idx = target.numpy()[0] // 10 + 1
                 data[task_idx][s]['x'].append(image)
                 data[task_idx][s]['y'].append(target.numpy()[0]%10)
-
         
         
         for t in range(1,11):
@@ -73,9 +72,9 @@ def get(seed=0,pc_valid=0.10, tasknum = 10):
                 data[t][s]['x']=torch.stack(data[t][s]['x']).view(-1,size[0],size[1],size[2])
                 data[t][s]['y']=torch.LongTensor(np.array(data[t][s]['y'],dtype=int)).view(-1)
                 torch.save(data[t][s]['x'], os.path.join(os.path.expanduser('../dat/binary_split_cifar100'),
-                                                         'data'+str(t)+s+'x.bin'))
+                                                            'data'+str(t)+s+'x.bin'))
                 torch.save(data[t][s]['y'], os.path.join(os.path.expanduser('../dat/binary_split_cifar100'),
-                                                         'data'+str(t)+s+'y.bin'))
+                                                            'data'+str(t)+s+'y.bin'))
     
     # Load binary files
     data={}
@@ -122,3 +121,6 @@ def get(seed=0,pc_valid=0.10, tasknum = 10):
     data['ncla']=n
 
     return data,taskcla,size
+
+if __name__ == "__main__":
+    get()

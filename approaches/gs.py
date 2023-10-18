@@ -42,6 +42,7 @@ class Appr(object):
         self.freeze = {}
         self.mask = {}
         
+        #initializes elements in self.mask to be zeros in the shape of the convolutional kernels; dictionary means that values are assigned to name of kernel
         for (name,p) in self.model.named_parameters():
             if len(p.size())<2:
                 continue
@@ -133,10 +134,10 @@ class Appr(object):
         # Update old
         self.model.act = None
 
-        temp=utils.gs_cal(t,xtrain,ytrain,self.criterion, self.model)
+        temp=utils.gs_cal(t,xtrain,ytrain,self.criterion, self.model) #review this
         for n in temp.keys():
             if t>0:
-                self.omega[n] = args.eta * self.omega[n] + temp[n]
+                self.omega[n] = args.eta * self.omega[n] + temp[n] #equation 8; temp represents average relu activation
             else:
                 self.omega = temp
             self.mask[n] = (self.omega[n]>0).float()
@@ -146,10 +147,11 @@ class Appr(object):
         test_loss, test_acc = self.eval(t, xvalid, yvalid)
         print(' Valid: loss={:.3f}, acc={:5.1f}% |'.format(test_loss,100*test_acc))
         
-        dummy = Net(input_size, taskcla).cuda()
+        dummy = Net(input_size, taskcla).cpu()
 
         pre_name = 0
         
+        #read through this part, no idea what it does
         for (name,dummy_layer),(_,layer) in zip(dummy.named_children(), self.model.named_children()):
             with torch.no_grad():
                 if isinstance(layer, nn.Linear) or isinstance(layer, nn.Conv2d):
@@ -212,7 +214,7 @@ class Appr(object):
 
         r=np.arange(x.size(0))
         np.random.shuffle(r)
-        r=torch.LongTensor(r).cuda()
+        r=torch.LongTensor(r).cpu()
 
         # Loop batches
         for i in range(0,len(r),self.sbatch):
@@ -251,7 +253,7 @@ class Appr(object):
             self.model.eval()
 
             r = np.arange(x.size(0))
-            r = torch.LongTensor(r).cuda()
+            r = torch.LongTensor(r).cpu()
 
             # Loop batches
             for i in range(0,len(r),self.sbatch): 
@@ -343,3 +345,4 @@ class Appr(object):
 
     def criterion(self,t,output,targets):
         return self.ce(output,targets)
+

@@ -15,6 +15,7 @@ from sklearn.feature_extraction import image
 from arguments import get_args
 args = get_args()
 
+#review this function
 def gs_cal(t, x, y, criterion, model, sbatch=20):
     
     # Init
@@ -32,7 +33,7 @@ def gs_cal(t, x, y, criterion, model, sbatch=20):
     model.train()
 
     for i in range(0,x.size(0),sbatch):
-        b=torch.LongTensor(np.arange(i,np.min([i+sbatch,x.size(0)]))).cuda()
+        b=torch.LongTensor(np.arange(i,np.min([i+sbatch,x.size(0)]))).cpu()
         images=x[b]
         target=y[b]
 
@@ -149,7 +150,7 @@ def fisher_matrix_diag(t,x,y,model,criterion,sbatch=20):
     model.train()
     criterion = torch.nn.CrossEntropyLoss()
     for i in tqdm(range(0,x.size(0),sbatch),desc='Fisher diagonal',ncols=100,ascii=True):
-        b=torch.LongTensor(np.arange(i,np.min([i+sbatch,x.size(0)]))).cuda()
+        b=torch.LongTensor(np.arange(i,np.min([i+sbatch,x.size(0)]))).cpu()
         images=x[b]
         target=y[b]
 
