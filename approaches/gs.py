@@ -151,7 +151,7 @@ class Appr(object):
 
         pre_name = 0
         
-        #read through this part, no idea what it does
+        #read through this part
         for (name,dummy_layer),(_,layer) in zip(dummy.named_children(), self.model.named_children()):
             with torch.no_grad():
                 if isinstance(layer, nn.Linear) or isinstance(layer, nn.Conv2d):
@@ -203,6 +203,7 @@ class Appr(object):
                     else:
                         weight[:, self.omega[pre_name] == 0] = 0
         test_loss, test_acc = self.eval(t, xvalid, yvalid)
+        
         
         self.model_old = deepcopy(self.model)
         self.model_old.train()
