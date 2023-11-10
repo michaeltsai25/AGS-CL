@@ -8,6 +8,7 @@ sys.path.append('..')
 from arguments import get_args
 import torch.nn.functional as F
 import torch.nn as nn
+from typing import Callable, Optional
 args = get_args()
 
 if 'omniglot' in args.experiment:
@@ -54,6 +55,42 @@ class Appr(object):
             params=args.parameter.split(',')
             print('Setting parameters to',params)
             self.lamb=float(params[0])
+            
+        #OGD INIT
+        self.config = args
+
+        print(f"### The model has {count_parameter(self.model)} parameters ###")
+
+        # # TODO : remove from init : added only for the NTK gen part ?
+        # self.optimizer = self.optimizer = torch.optim.SGD(params=self.model.parameters(),
+        #                                                   lr=self.config.lr,
+        #                                                   momentum=0,
+        #                                                   weight_decay=0)
+
+        if self.config.is_split_cub :
+            n_params = get_n_trainable(self.model)
+        elif self.config.is_split :
+            n_params = count_parameter(self.model.linear)
+        else :
+            n_params = count_parameter(self.model)
+        self.ogd_basis = torch.empty(n_params, 0)
+        # self.ogd_basis = None
+        self.ogd_basis_ids = defaultdict(lambda: torch.LongTensor([]))
+
+        if self.config.gpu:
+            # self.ogd_basis = self.ogd_basis.cuda()
+            self.ogd_basis_ids = defaultdict(lambda: torch.LongTensor([]).cuda())
+
+        # Store initial Neural Tangents
+
+        self.task_count = 0
+        self.task_memory = {}
+        self.task_mem_cache = {}
+
+        self.task_grad_memory = {}
+        self.task_grad_mem_cache = {}
+
+        self.mem_loaders = list()
 
         return
 
@@ -62,32 +99,33 @@ class Appr(object):
         return torch.optim.Adam(self.model.parameters(), lr=lr)
 
     def train(self, t, xtrain, ytrain, xvalid, yvalid, data, input_size, taskcla):
-
+        
         best_loss = np.inf
         best_model = utils.get_model(self.model)
         lr = self.lr
         patience = self.lr_patience
         self.optimizer = self._get_optimizer(lr)
 
-        if t>0:
-            self.freeze = {}
-            for name, param in self.model.named_parameters():
-                if 'bias' in name or 'last' in name:
-                    continue
-                key = name.split('.')[0]
-                if 'conv1' not in name:
-                    if 'conv' in name: #convolution layer
-                        temp = torch.ones_like(param)
-                        temp[:, self.omega[prekey] == 0] = 0
-                        temp[self.omega[key] == 0] = 1
-                        self.freeze[key] = temp
-                    else:#linear layer
-                        temp = torch.ones_like(param)
-                        temp = temp.reshape((temp.size(0), self.omega[prekey].size(0) , -1))
-                        temp[:, self.omega[prekey] == 0] = 0
-                        temp[self.omega[key] == 0] = 1
-                        self.freeze[key] = temp.reshape(param.shape)
-                prekey = key
+        #replace this with ogd functions updating individual nodes orthogonally
+        # if t>0:
+        #     self.freeze = {}
+        #     for name, param in self.model.named_parameters():
+        #         if 'bias' in name or 'last' in name:
+        #             continue
+        #         key = name.split('.')[0]
+        #         if 'conv1' not in name:
+        #             if 'conv' in name: #convolution layer
+        #                 temp = torch.ones_like(param)
+        #                 temp[:, self.omega[prekey] == 0] = 0
+        #                 temp[self.omega[key] == 0] = 1
+        #                 self.freeze[key] = temp
+        #             else:#linear layer
+        #                 temp = torch.ones_like(param)
+        #                 temp = temp.reshape((temp.size(0), self.omega[prekey].size(0) , -1))
+        #                 temp[:, self.omega[prekey] == 0] = 0
+        #                 temp[self.omega[key] == 0] = 1
+        #                 self.freeze[key] = temp.reshape(param.shape)
+        #         prekey = key
                 
         # Loop epochs
         for e in range(self.nepochs):
@@ -97,7 +135,7 @@ class Appr(object):
             # CUB 200 xtrain_cropped = crop(x_train)
             num_batch = xtrain.size(0)
 
-            self.train_epoch(t,xtrain,ytrain,lr)
+            self.train_epoch(e,t,lr,xtrain,ytrain,data) #check parameters
 
             clock1=time.time()
             train_loss,train_acc=self.eval(t,xtrain,ytrain)
@@ -134,13 +172,13 @@ class Appr(object):
         # Update old
         self.model.act = None
 
-        temp=utils.gs_cal(t,xtrain,ytrain,self.criterion, self.model) #review this
-        for n in temp.keys():
-            if t>0:
-                self.omega[n] = args.eta * self.omega[n] + temp[n] #equation 8; temp represents average relu activation
-            else:
-                self.omega = temp
-            self.mask[n] = (self.omega[n]>0).float()
+        # temp=utils.gs_cal(t,xtrain,ytrain,self.criterion, self.model) #review this
+        # for n in temp.keys():
+        #     if t>0:
+        #         self.omega[n] = args.eta * self.omega[n] + temp[n] #equation 8; temp represents average relu activation
+        #     else:
+        #         self.omega = temp
+        #     self.mask[n] = (self.omega[n]>0).float()
             
         torch.save(self.model.state_dict(), './trained_model/' + self.log_name + '_task_{}.pt'.format(t))
         
@@ -207,10 +245,10 @@ class Appr(object):
         
         self.model_old = deepcopy(self.model)
         self.model_old.train()
-        utils.freeze_model(self.model_old) # Freeze the weights
+        # utils.freeze_model(self.model_old) # Freeze the weights
         return
 
-    def train_epoch(self,t,x,y,lr):
+    def train_epoch(self,epoch,t,x,y,lr,xtrain,ytrain, data):
         self.model.train()
 
         r=np.arange(x.size(0))
@@ -232,15 +270,15 @@ class Appr(object):
             # Backward
             self.optimizer.zero_grad()
             loss.backward()
-            self.optimizer.step()
+            self.optimizer_step(epoch, i, t, xtrain, ytrain, data=data)
 
             #Freeze the outgoing weights
-            if t>0:
-                for name, param in self.model.named_parameters():
-                    if 'bias' in name or 'last' in name or 'conv1' in name:
-                        continue
-                    key = name.split('.')[0]
-                    param.data = param.data*self.freeze[key]
+            # if t>0:
+            #     for name, param in self.model.named_parameters():
+            #         if 'bias' in name or 'last' in name or 'conv1' in name:
+            #             continue
+            #         key = name.split('.')[0]
+            #         param.data = param.data*self.freeze[key]
 
         self.proxy_grad_descent(t,lr)
         
@@ -346,4 +384,202 @@ class Appr(object):
 
     def criterion(self,t,output,targets):
         return self.ce(output,targets)
+    
+    #OGD
+    def _get_new_ogd_basis(self, train_loader, last=False):
+        return self._get_neural_tangents(train_loader,
+                                         gpu=self.config.gpu,
+                                         optimizer=self.optimizer,
+                                         model=self.model, last=last)
 
+    #collects 100 sample gradients from all previous tasks to represent basis vectors of new 100-d space. Then updates the new gradient in a direction orthogonal to all of these vectors (watch 3blue1brown video on basis vectors)
+    def _get_neural_tangents(self, train_loader, gpu, optimizer, model, last):
+        new_basis = []
+
+        for i, (inputs, targets, tasks) in tqdm(enumerate(train_loader),
+                                                desc="get neural tangents",
+                                                total=len(train_loader.dataset)):
+            # if gpu:
+            inputs = self.to_device(inputs)
+            targets = self.to_device(targets)
+
+            out = self.forward(x=inputs, task=(tasks))
+            label = targets.item()
+            pred = out[0, label]
+
+            optimizer.zero_grad()
+            pred.backward()
+
+            grad_vec = parameters_to_grad_vector(self.get_params_dict(last=last))
+            new_basis.append(grad_vec)
+        new_basis_tensor = torch.stack(new_basis).T
+        return new_basis_tensor
+    
+    def optimizer_step(self, i, t, xtrain, ytrain, data, current_epoch, batch_idx, optimizer_closure: Optional[Callable] = None,
+                       second_order_closure=None, using_native_amp=None):
+        #super().optimizer_step(epoch=current_epoch, batch_idx=batch_idx, optimizer=self.optimizer, optimizer_closure=optimizer_closure)
+        cur_param = self.get_params_dict(last=False)
+        for param in cur_param:
+            self.update_ogd_basis(task_id=None, data_train_loader=data)
+            self.omega_update(t, xtrain, ytrain)
+            node_param = parameters_to_vector(param)
+            node_grad_vec = parameters_to_grad_vector(param)
+            self.nodewise_optimizer_step(cur_param=node_param, grad_vec=node_grad_vec)
+            
+    def omega_update(self, t, xtrain, ytrain):
+        # Update old
+        self.model.act = None
+
+        temp=utils.gs_cal(t,xtrain,ytrain,self.criterion, self.model) #review this
+        for n in temp.keys():
+            if t>0:
+                self.omega[n] = args.eta * self.omega[n] + temp[n] #equation 8; temp represents average relu activation
+            else:
+                self.omega = temp
+            self.mask[n] = (self.omega[n]>0).float()
+        
+    def nodewise_optimizer_step(self, cur_param, grad_vec):
+        task_key = str(self.task_id)
+        if self.config.ogd or self.config.ogd_plus:
+            proj_grad_vec = project_vec(grad_vec, proj_basis=self.ogd_basis, gpu=self.config.gpu)
+            new_grad_vec = grad_vec - (self.omega*proj_grad_vec)
+        else:
+            new_grad_vec = grad_vec
+        cur_param -= self.config.lr * new_grad_vec
+        vector_to_parameters(cur_param, self.get_params_dict(last=False))
+
+        if self.config.is_split :
+            # Update the parameters of the last layer without projection, when there are multiple heads)
+            cur_param = parameters_to_vector(self.get_params_dict(last=True, task_key=task_key))
+            grad_vec = parameters_to_grad_vector(self.get_params_dict(last=True, task_key=task_key))
+            cur_param -= self.config.lr * grad_vec
+            vector_to_parameters(cur_param, self.get_params_dict(last=True, task_key=task_key))
+        self.optimizer.zero_grad()
+
+    def _update_mem(self, data_train_loader, val_loader=None):
+        # 2.Randomly decide the images to stay in the memory
+        self.task_count += 1
+
+        # (a) Decide the number of samples for being saved
+        num_sample_per_task = self.config.memory_size
+
+        # (c) Randomly choose some samples from new task and save them to the memory
+        self.task_memory[self.task_count] = Memory()  # Initialize the memory slot
+        randind = torch.randperm(len(data_train_loader.dataset))[:num_sample_per_task]  # randomly sample some data
+        for ind in randind:  # save it to the memory
+            self.task_memory[self.task_count].append(data_train_loader.dataset[ind])
+
+        ####################################### Grads MEM ###########################
+
+        # (e) Get the new non-orthonormal gradients basis
+        if self.config.ogd:
+            ogd_train_loader = torch.utils.data.DataLoader(self.task_memory[self.task_count], batch_size=1,
+                                                           shuffle=False, num_workers=1)
+        elif self.config.ogd_plus:
+            all_task_memory = []
+            for task_id, mem in self.task_memory.items():
+                all_task_memory.extend(mem)
+            # random.shuffle(all_task_memory)
+            # ogd_memory_list = all_task_memory[:num_sample_per_task]
+            ogd_memory_list = all_task_memory
+            ogd_memory = Memory()
+            for obs in ogd_memory_list:
+                ogd_memory.append(obs)
+            ogd_train_loader = torch.utils.data.DataLoader(ogd_memory, batch_size=1, shuffle=False, num_workers=1)
+        # Non orthonormalised basis
+        new_basis_tensor = self._get_new_ogd_basis(ogd_train_loader)
+        print(f"new_basis_tensor shape {new_basis_tensor.shape}")
+
+        # (f) Ortonormalise the whole memorized basis
+        if self.config.is_split:
+            n_params = count_parameter(self.model.linear)
+        else:
+            n_params = count_parameter(self.model)
+        self.ogd_basis = torch.empty(n_params, 0)
+        self.ogd_basis = self.to_device(self.ogd_basis)
+
+        if self.config.ogd:
+            for t, mem in self.task_grad_memory.items():
+                # Concatenate all data in each task
+                task_ogd_basis_tensor = mem.get_tensor()
+                task_ogd_basis_tensor = self.to_device(task_ogd_basis_tensor)
+                self.ogd_basis = torch.cat([self.ogd_basis, task_ogd_basis_tensor], axis=1)
+            self.ogd_basis = torch.cat([self.ogd_basis, new_basis_tensor], axis=1)
+        elif self.config.ogd_plus :
+            if self.config.pca :
+                for t, mem in self.task_grad_memory.items():
+                    # Concatenate all data in each task
+                    task_ogd_basis_tensor = mem.get_tensor()
+                    task_ogd_basis_tensor = self.to_device(task_ogd_basis_tensor)
+
+                    # task_ogd_basis_tensor.shape
+                    # Out[3]: torch.Size([330762, 50])
+                    start_idx = t * num_sample_per_task
+                    end_idx = (t + 1) * num_sample_per_task
+                    before_pca_tensor = torch.cat([task_ogd_basis_tensor, new_basis_tensor[:, start_idx:end_idx]], axis=1)
+                    u, s, v = torch.svd(before_pca_tensor)
+
+                    # u.shape
+                    # Out[8]: torch.Size([330762, 150]) -> col size should be 2 * num_sample_per_task
+
+                    after_pca_tensor = u[:, :num_sample_per_task]
+
+                    # after_pca_tensor.shape
+                    # Out[13]: torch.Size([330762, 50])
+
+                    self.ogd_basis = torch.cat([self.ogd_basis, after_pca_tensor], axis=1)
+            #   self.ogd_basis.shape should be T * num_sample_per_task
+
+            else :
+                self.ogd_basis = new_basis_tensor
+
+        # TODO : Check if start_idx is correct :)
+        start_idx = (self.task_count - 1) * num_sample_per_task
+        # print(f"the start idx of orthonormalisation if {start_idx}")
+        self.ogd_basis = orthonormalize(self.ogd_basis, gpu=self.config.gpu, normalize=True)
+
+        # (g) Store in the new basis
+        ptr = 0
+        for t, mem in self.task_memory.items():
+            task_mem_size = len(mem)
+
+            idxs_list = [i + ptr for i in range(task_mem_size)]
+            if self.config.gpu:
+                self.ogd_basis_ids[t] = torch.LongTensor(idxs_list).cuda()
+            else:
+                self.ogd_basis_ids[t] = torch.LongTensor(idxs_list)
+
+            self.task_grad_memory[t] = Memory()  # Initialize the memory slot
+            for ind in range(task_mem_size):  # save it to the memory
+                self.task_grad_memory[t].append(self.ogd_basis[:, ptr])
+                ptr += 1
+        print(f"Used memory {ptr} / {self.config.memory_size}")
+
+        if self.config.ogd or self.config.ogd_plus :
+            loader = torch.utils.data.DataLoader(self.task_memory[self.task_count],
+                                                                            batch_size=self.config.batch_size,
+                                                                            shuffle=True,
+                                                                            num_workers=2)
+            self.mem_loaders.append(loader)
+
+    def update_ogd_basis(self, task_id, data_train_loader):
+        if self.config.gpu :
+            device = torch.device("cuda")
+            self.model.to(device)
+        print(f"\nself.model.device update_ogd_basis {next(self.model.parameters()).device}")
+        if self.config.ogd or self.config.ogd_plus:
+            self._update_mem(data_train_loader)
+            
+    def get_params_dict(self, last, task_key=None):
+        if self.config.is_split_cub :
+            if last :
+                return self.model.last[task_key].parameters()
+            else :
+                return self.model.linear.parameters()
+        elif self.config.is_split :
+            if last:
+                return self.model.last[task_key].parameters()
+            else:
+                return self.model.linear.parameters()
+        else:
+            return self.model.parameters()

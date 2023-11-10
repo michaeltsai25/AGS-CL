@@ -256,8 +256,6 @@ def clip_relevance_norm_(parameters, max_norm, norm_type=2):
 
 ########################################################################################################################
 
-from ogd.ogd_utils import get_model_parameters, get_model_n_layers
-
 import torch
 from tqdm.auto import tqdm
 from torch.nn.utils.convert_parameters import _check_param_device, parameters_to_vector, vector_to_parameters
