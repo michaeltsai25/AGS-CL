@@ -135,7 +135,7 @@ class Appr(object):
             # CUB 200 xtrain_cropped = crop(x_train)
             num_batch = xtrain.size(0)
 
-            self.train_epoch(e,t,lr,xtrain,ytrain,data) #check parameters
+            self.train_epoch(e,t,xtrain,ytrain,lr,data) #check parameters
 
             clock1=time.time()
             train_loss,train_acc=self.eval(t,xtrain,ytrain)
@@ -248,7 +248,7 @@ class Appr(object):
         # utils.freeze_model(self.model_old) # Freeze the weights
         return
 
-    def train_epoch(self,epoch,t,x,y,lr,xtrain,ytrain, data):
+    def train_epoch(self,epoch,t,x,y,lr,data):
         self.model.train()
 
         r=np.arange(x.size(0))
@@ -270,7 +270,7 @@ class Appr(object):
             # Backward
             self.optimizer.zero_grad()
             loss.backward()
-            self.optimizer_step(epoch, i, t, xtrain, ytrain, data=data)
+            self.optimizer_step(epoch, i, t, x, y, data=data)
 
             #Freeze the outgoing weights
             # if t>0:
