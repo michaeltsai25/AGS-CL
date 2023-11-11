@@ -172,13 +172,13 @@ class Appr(object):
         # Update old
         self.model.act = None
 
-        # temp=utils.gs_cal(t,xtrain,ytrain,self.criterion, self.model) #review this
-        # for n in temp.keys():
-        #     if t>0:
-        #         self.omega[n] = args.eta * self.omega[n] + temp[n] #equation 8; temp represents average relu activation
-        #     else:
-        #         self.omega = temp
-        #     self.mask[n] = (self.omega[n]>0).float()
+        temp=utils.gs_cal(t,xtrain,ytrain,self.criterion, self.model) #review this
+        for n in temp.keys():
+            if t>0:
+                self.omega[n] = args.eta * self.omega[n] + temp[n] #equation 8; temp represents average relu activation
+            else:
+                self.omega = temp
+            self.mask[n] = (self.omega[n]>0).float()
             
         torch.save(self.model.state_dict(), './trained_model/' + self.log_name + '_task_{}.pt'.format(t))
         
@@ -421,28 +421,15 @@ class Appr(object):
         cur_param = self.get_params_dict(last=False)
         for param in cur_param:
             self.update_ogd_basis(task_id=None, data_train_loader=data)
-            self.omega_update(t, xtrain, ytrain)
             node_param = parameters_to_vector(param)
             node_grad_vec = parameters_to_grad_vector(param)
-            self.nodewise_optimizer_step(cur_param=node_param, grad_vec=node_grad_vec)
-            
-    def omega_update(self, t, xtrain, ytrain):
-        # Update old
-        self.model.act = None
-
-        temp=utils.gs_cal(t,xtrain,ytrain,self.criterion, self.model) #review this
-        for n in temp.keys():
-            if t>0:
-                self.omega[n] = args.eta * self.omega[n] + temp[n] #equation 8; temp represents average relu activation
-            else:
-                self.omega = temp
-            self.mask[n] = (self.omega[n]>0).float()
+            self.nodewise_optimizer_step(param=param, cur_param=node_param, grad_vec=node_grad_vec) #need to make sure param is the correct key for omega and that every node should be updated in the same manner (some nodes aren't frozen in AGS paper)
         
-    def nodewise_optimizer_step(self, cur_param, grad_vec):
+    def nodewise_optimizer_step(self, param, cur_param, grad_vec):
         task_key = str(self.task_id)
         if self.config.ogd or self.config.ogd_plus:
             proj_grad_vec = project_vec(grad_vec, proj_basis=self.ogd_basis, gpu=self.config.gpu)
-            new_grad_vec = grad_vec - (self.omega*proj_grad_vec)
+            new_grad_vec = grad_vec - (self.omega[param]*proj_grad_vec) #need to make sure omega doesn't exceed 1
         else:
             new_grad_vec = grad_vec
         cur_param -= self.config.lr * new_grad_vec
