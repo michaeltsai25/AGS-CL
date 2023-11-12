@@ -14,6 +14,7 @@ from PIL import Image
 from sklearn.feature_extraction import image
 from arguments import get_args
 from typing import Iterable, Optional
+from torch.nn.utils.convert_parameters import _check_param_device, parameters_to_vector, vector_to_parameters
 args = get_args()
 
 #review this function
@@ -258,7 +259,6 @@ def clip_relevance_norm_(parameters, max_norm, norm_type=2):
 
 import torch
 from tqdm.auto import tqdm
-from torch.nn.utils.convert_parameters import _check_param_device, parameters_to_vector, vector_to_parameters
 import torch.nn as nn
 
 from collections import defaultdict
@@ -319,17 +319,27 @@ def orthonormalize(vectors, gpu, normalize=True, start_idx=0):
 
     return vectors
 
-
-def project_vec(vec, proj_basis, gpu):
-    if proj_basis.shape[1] > 0:  # param x basis_size
-        dots = torch.matmul(vec, proj_basis)  # basis_size
-        # out = torch.matmul(proj_basis, dots)
-        # TODO : Check !!!!
-        out = torch.matmul(proj_basis, dots.T)
-        return out
-    else:
-        return torch.zeros_like(vec)
-
+#TODO: run debugger to check code
+def project_vec(model, omega, proj_basis, gpu):
+    tot_grad = torch.empty(0)
+    for name, param in model.named_parameters():
+        if 'bias' in name or 'last' in name:
+            continue
+        key = name.split('.')[0]
+        temp = torch.ones_like(param)
+        for i, node in enumerate(param):
+            grad_vec = parameters_to_grad_vector(node)
+            if proj_basis.shape[1] > 0:  # param x basis_size
+                dots = torch.matmul(grad_vec, proj_basis)  # basis_size
+                # out = torch.matmul(proj_basis, dots)
+                # TODO : Check !!!!
+                out = torch.matmul(proj_basis, dots.T)
+                temp[i] = grad_vec - (omega[key]*out)
+            else:
+                temp[i] = grad_vec - (omega[key]*torch.zeros_like(grad_vec))
+        tot_grad = torch.cat(tot_grad, temp)
+        
+    return tot_grad
 
 def parameters_to_grad_vector(parameters):
     # Flag for the device where the parameter is located

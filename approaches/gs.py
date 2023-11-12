@@ -270,7 +270,7 @@ class Appr(object):
             # Backward
             self.optimizer.zero_grad()
             loss.backward()
-            self.optimizer_step(epoch, i, t, x, y, data=data)
+            self.optimizer_step(epoch, i, t, x, y)
 
             #Freeze the outgoing weights
             # if t>0:
@@ -415,23 +415,14 @@ class Appr(object):
         new_basis_tensor = torch.stack(new_basis).T
         return new_basis_tensor
     
-    def optimizer_step(self, i, t, xtrain, ytrain, data, current_epoch, batch_idx, optimizer_closure: Optional[Callable] = None,
+    def optimizer_step(self, current_epoch, batch_idx, optimizer, optimizer_closure: Optional[Callable] = None,
                        second_order_closure=None, using_native_amp=None):
-        #super().optimizer_step(epoch=current_epoch, batch_idx=batch_idx, optimizer=self.optimizer, optimizer_closure=optimizer_closure)
-        cur_param = self.get_params_dict(last=False)
-        for param in cur_param:
-            self.update_ogd_basis(task_id=None, data_train_loader=data)
-            node_param = parameters_to_vector(param)
-            node_grad_vec = parameters_to_grad_vector(param)
-            self.nodewise_optimizer_step(param=param, cur_param=node_param, grad_vec=node_grad_vec) #need to make sure param is the correct key for omega and that every node should be updated in the same manner (some nodes aren't frozen in AGS paper)
-        
-    def nodewise_optimizer_step(self, param, cur_param, grad_vec):
+        #super().optimizer_step(epoch=current_epoch, batch_idx=batch_idx, optimizer=optimizer, optimizer_closure=optimizer_closure)
         task_key = str(self.task_id)
-        if self.config.ogd or self.config.ogd_plus:
-            proj_grad_vec = project_vec(grad_vec, proj_basis=self.ogd_basis, gpu=self.config.gpu)
-            new_grad_vec = grad_vec - (self.omega[param]*proj_grad_vec) #need to make sure omega doesn't exceed 1
-        else:
-            new_grad_vec = grad_vec
+
+        cur_param = parameters_to_vector(self.get_params_dict(last=False))
+        grad_vec = parameters_to_grad_vector(self.get_params_dict(last=False))
+        new_grad_vec = project_vec(model=self.model, omega=self.omega, proj_basis=self.ogd_basis, gpu=self.config.gpu)
         cur_param -= self.config.lr * new_grad_vec
         vector_to_parameters(cur_param, self.get_params_dict(last=False))
 
@@ -441,8 +432,8 @@ class Appr(object):
             grad_vec = parameters_to_grad_vector(self.get_params_dict(last=True, task_key=task_key))
             cur_param -= self.config.lr * grad_vec
             vector_to_parameters(cur_param, self.get_params_dict(last=True, task_key=task_key))
-        self.optimizer.zero_grad()
-
+        optimizer.zero_grad()
+        
     def _update_mem(self, data_train_loader, val_loader=None):
         # 2.Randomly decide the images to stay in the memory
         self.task_count += 1

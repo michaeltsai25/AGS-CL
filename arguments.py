@@ -37,6 +37,14 @@ def get_args():
     parser.add_argument('--tasknum', default=10, type=int, help='(default=%(default)s)')
     parser.add_argument('--parameter',type=str,default='',help='(default=%(default)s)')
     parser.add_argument('--sample', type = int, default=1, help='Using sigma max to support coefficient')
+    
+    parser.add_argument('--is_split', type=bool, default=False, help='(default=%(default)s)')
+    parser.add_argument('--is_split_cub', type=bool, default=False, help='(default=%(default)s)')
+    
+    parser.add_argument('--ogd', type=bool, default=False, help='(default=%(default)s)')
+    parser.add_argument('--ogd_plus', type=bool, default=True, help='(default=%(default)s)')
+    
+    parser.add_argument('--gpu', type=bool, default=False, help='(default=%(default)s)')
 
     args=parser.parse_args()
     return args
