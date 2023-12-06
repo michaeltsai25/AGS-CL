@@ -245,6 +245,7 @@ class Appr(object):
         
         self.model_old = deepcopy(self.model)
         self.model_old.train()
+        self.update_ogd_basis(xtrain) #replace this with full train loader
         # utils.freeze_model(self.model_old) # Freeze the weights
         return
 
@@ -271,6 +272,7 @@ class Appr(object):
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer_step(epoch, i, t, x, y)
+            self.optimizer.step()
 
             #Freeze the outgoing weights
             # if t>0:
@@ -423,7 +425,7 @@ class Appr(object):
         cur_param = parameters_to_vector(self.get_params_dict(last=False))
         grad_vec = parameters_to_grad_vector(self.get_params_dict(last=False))
         new_grad_vec = project_vec(model=self.model, omega=self.omega, proj_basis=self.ogd_basis, gpu=self.config.gpu)
-        cur_param -= self.config.lr * new_grad_vec
+        #cur_param -= self.config.lr * new_grad_vec
         vector_to_parameters(cur_param, self.get_params_dict(last=False))
 
         if self.config.is_split :
@@ -432,7 +434,6 @@ class Appr(object):
             grad_vec = parameters_to_grad_vector(self.get_params_dict(last=True, task_key=task_key))
             cur_param -= self.config.lr * grad_vec
             vector_to_parameters(cur_param, self.get_params_dict(last=True, task_key=task_key))
-        optimizer.zero_grad()
         
     def _update_mem(self, data_train_loader, val_loader=None):
         # 2.Randomly decide the images to stay in the memory
@@ -540,7 +541,7 @@ class Appr(object):
                                                                             num_workers=2)
             self.mem_loaders.append(loader)
 
-    def update_ogd_basis(self, task_id, data_train_loader):
+    def update_ogd_basis(self, data_train_loader):
         if self.config.gpu :
             device = torch.device("cuda")
             self.model.to(device)
@@ -549,15 +550,11 @@ class Appr(object):
             self._update_mem(data_train_loader)
             
     def get_params_dict(self, last, task_key=None):
-        if self.config.is_split_cub :
-            if last :
-                return self.model.last[task_key].parameters()
-            else :
-                return self.model.linear.parameters()
-        elif self.config.is_split :
-            if last:
-                return self.model.last[task_key].parameters()
-            else:
-                return self.model.linear.parameters()
-        else:
-            return self.model.parameters()
+        return self.model.get_parameters()
+        # if self.config.is_split :
+        #     if last:
+        #         return self.model.last[task_key].parameters()
+        #     else:
+        #         return self.model.get_parameters()
+        # else:
+        #     return self.model.parameters()

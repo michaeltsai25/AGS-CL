@@ -90,3 +90,16 @@ class Net(nn.Module):
             for idx, name in enumerate(names):
                 act[idx].register_hook(save_grad(name))
         return y
+    
+    def get_parameters(self):
+        yield self.conv1
+        yield self.conv2
+        yield self.conv3
+        yield self.conv4
+        yield self.conv5
+        yield self.conv6
+        yield self.fc1
+        yield self.drop1
+        yield self.drop2
+        yield self.MaxPool
+        yield self.last
