@@ -99,7 +99,8 @@ class Net(nn.Module):
         yield self.conv5
         yield self.conv6
         yield self.fc1
-        yield self.drop1
-        yield self.drop2
-        yield self.MaxPool
-        yield self.last
+        
+# if __name__ == "__main__":
+#     test = Net(5, 10)
+#     for param in test.parameters():
+#         print(type(param))

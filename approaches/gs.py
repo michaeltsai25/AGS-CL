@@ -107,25 +107,25 @@ class Appr(object):
         self.optimizer = self._get_optimizer(lr)
 
         #replace this with ogd functions updating individual nodes orthogonally
-        # if t>0:
-        #     self.freeze = {}
-        #     for name, param in self.model.named_parameters():
-        #         if 'bias' in name or 'last' in name:
-        #             continue
-        #         key = name.split('.')[0]
-        #         if 'conv1' not in name:
-        #             if 'conv' in name: #convolution layer
-        #                 temp = torch.ones_like(param)
-        #                 temp[:, self.omega[prekey] == 0] = 0
-        #                 temp[self.omega[key] == 0] = 1
-        #                 self.freeze[key] = temp
-        #             else:#linear layer
-        #                 temp = torch.ones_like(param)
-        #                 temp = temp.reshape((temp.size(0), self.omega[prekey].size(0) , -1))
-        #                 temp[:, self.omega[prekey] == 0] = 0
-        #                 temp[self.omega[key] == 0] = 1
-        #                 self.freeze[key] = temp.reshape(param.shape)
-        #         prekey = key
+        if t>0:
+            self.freeze = {}
+            for name, param in self.model.named_parameters():
+                if 'bias' in name or 'last' in name:
+                    continue
+                key = name.split('.')[0]
+                if 'conv1' not in name:
+                    if 'conv' in name: #convolution layer
+                        temp = torch.ones_like(param)
+                        temp[:, self.omega[prekey] == 0] = 0
+                        temp[self.omega[key] == 0] = 1
+                        self.freeze[key] = temp
+                    else:#linear layer
+                        temp = torch.ones_like(param)
+                        temp = temp.reshape((temp.size(0), self.omega[prekey].size(0) , -1))
+                        temp[:, self.omega[prekey] == 0] = 0
+                        temp[self.omega[key] == 0] = 1
+                        self.freeze[key] = temp.reshape(param.shape)
+                prekey = key
                 
         # Loop epochs
         for e in range(self.nepochs):
@@ -242,10 +242,14 @@ class Appr(object):
                         weight[:, self.omega[pre_name] == 0] = 0
         test_loss, test_acc = self.eval(t, xvalid, yvalid)
         
-        
+        #check to make sure loader is correct
+        loader = torch.utils.data.DataLoader(self.task_memory[self.task_count],
+                                                                            batch_size=self.config.batch_size,
+                                                                            shuffle=True,
+                                                                            num_workers=2)
         self.model_old = deepcopy(self.model)
         self.model_old.train()
-        self.update_ogd_basis(xtrain) #replace this with full train loader
+        self.update_ogd_basis(loader) #replace this with full train loader
         # utils.freeze_model(self.model_old) # Freeze the weights
         return
 
@@ -420,20 +424,25 @@ class Appr(object):
     def optimizer_step(self, current_epoch, batch_idx, optimizer, optimizer_closure: Optional[Callable] = None,
                        second_order_closure=None, using_native_amp=None):
         #super().optimizer_step(epoch=current_epoch, batch_idx=batch_idx, optimizer=optimizer, optimizer_closure=optimizer_closure)
-        task_key = str(self.task_id)
+        #task_key = str(self.task_id)
 
-        cur_param = parameters_to_vector(self.get_params_dict(last=False))
-        grad_vec = parameters_to_grad_vector(self.get_params_dict(last=False))
-        new_grad_vec = project_vec(model=self.model, omega=self.omega, proj_basis=self.ogd_basis, gpu=self.config.gpu)
+        # for param in self.get_params_dict(last=False):
+        #     print(type(param))
+        # print("parameters", self.get_params_dict(last=False))
+        # for param in self.get_params_dict(last=False):
+        #     print(param.view(-1))
+        cur_param = parameters_to_vector(parameters=self.model.parameters())
+        #grad_vec = parameters_to_grad_vector(parameters=self.get_params_dict(last=False))
+        new_vec = project_vec(model=self.model, omega=self.omega, proj_basis=self.ogd_basis, gpu=self.config.gpu) #previously new_grad_vec
         #cur_param -= self.config.lr * new_grad_vec
-        vector_to_parameters(cur_param, self.get_params_dict(last=False))
+        grad_vector_to_parameters(new_vec, self.get_params_dict(last=False))
 
         if self.config.is_split :
             # Update the parameters of the last layer without projection, when there are multiple heads)
-            cur_param = parameters_to_vector(self.get_params_dict(last=True, task_key=task_key))
-            grad_vec = parameters_to_grad_vector(self.get_params_dict(last=True, task_key=task_key))
+            cur_param = parameters_to_vector(self.get_params_dict(last=True))
+            grad_vec = parameters_to_grad_vector(self.get_params_dict(last=True))
             cur_param -= self.config.lr * grad_vec
-            vector_to_parameters(cur_param, self.get_params_dict(last=True, task_key=task_key))
+            vector_to_parameters(cur_param, self.get_params_dict(last=True))
         
     def _update_mem(self, data_train_loader, val_loader=None):
         # 2.Randomly decide the images to stay in the memory
@@ -550,7 +559,12 @@ class Appr(object):
             self._update_mem(data_train_loader)
             
     def get_params_dict(self, last, task_key=None):
-        return self.model.get_parameters()
+        parameters = self.model.named_parameters()
+        # for param in parameters:
+        #     print(param.view(-1))
+        return parameters
+        #return [param for param in parameters if type(param) != None]
+        # self.model.get_parameters()
         # if self.config.is_split :
         #     if last:
         #         return self.model.last[task_key].parameters()

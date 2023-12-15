@@ -322,23 +322,38 @@ def orthonormalize(vectors, gpu, normalize=True, start_idx=0):
 #TODO: run debugger to check code
 def project_vec(model, omega, proj_basis, gpu):
     tot_grad = torch.empty(0)
+    grad_vec = []
     for name, param in model.named_parameters():
-        if 'bias' in name or 'last' in name:
+        if 'last' in name:
             continue
         key = name.split('.')[0]
         temp = torch.ones_like(param)
-        for i, node in enumerate(param):
-            grad_vec = parameters_to_grad_vector(node)
-            if proj_basis.shape[1] > 0:  # param x basis_size
-                dots = torch.matmul(grad_vec, proj_basis)  # basis_size
-                # out = torch.matmul(proj_basis, dots)
-                # TODO : Check !!!!
-                out = torch.matmul(proj_basis, dots.T)
-                temp[i] = grad_vec - (omega[key]*out)
-            else:
-                temp[i] = grad_vec - (omega[key]*torch.zeros_like(grad_vec))
-        tot_grad = torch.cat(tot_grad, temp)
+        param_grad = param.grad
+        layer_grad_vec = []
+        param_device = None
+        for i, node in enumerate(param_grad):
+            param_device = _check_param_device(node, param_device)
+            layer_grad_vec.append(node.view(-1))
+        grad_vec.append(torch.cat(layer_grad_vec))
         
+    if proj_basis.shape[1] > 0:
+        dots = torch.matmul(grad_vec, proj_basis)  # basis_size
+        tot_grad = grad_vec - (omega[key]*dots)
+    else:
+        tot_grad = torch.cat(grad_vec)
+    '''
+    for i, node in enumerate(param):
+        grad_vec = parameters_to_grad_vector(node)
+        if proj_basis.shape[1] > 0:  # param x basis_size
+            dots = torch.matmul(grad_vec, proj_basis)  # basis_size
+            # out = torch.matmul(proj_basis, dots)
+            # TODO : Check !!!!
+            out = torch.matmul(proj_basis, dots.T)
+            temp[i] = grad_vec - (omega[key]*out)
+        else:
+            temp[i] = grad_vec - (omega[key]*torch.zeros_like(grad_vec))
+    tot_grad = torch.cat(tot_grad, temp)
+    '''
     return tot_grad
 
 def parameters_to_grad_vector(parameters):
@@ -348,9 +363,11 @@ def parameters_to_grad_vector(parameters):
     vec = []
     for param in parameters:
         # Ensure the parameters are located in the same device
+        
         param_device = _check_param_device(param, param_device)
-
+        
         vec.append(param.grad.view(-1))
+            
     return torch.cat(vec)
 
 
@@ -364,7 +381,9 @@ def grad_vector_to_parameters(vec, parameters):
 
     # Pointer for slicing the vector for each parameter
     pointer = 0
-    for param in parameters:
+    for name, param in parameters:
+        if 'last' in name:
+            continue
         # Ensure the parameters are located in the same device
         param_device = _check_param_device(param, param_device)
 
