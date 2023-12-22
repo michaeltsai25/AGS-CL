@@ -69,8 +69,8 @@ class Appr(object):
 
         if self.config.is_split_cub :
             n_params = get_n_trainable(self.model)
-        elif self.config.is_split :
-            n_params = count_parameter(self.model.linear)
+        # elif self.config.is_split :
+        #     n_params = count_parameter(self.model.linear)
         else :
             n_params = count_parameter(self.model)
         self.ogd_basis = torch.empty(n_params, 0)
@@ -486,10 +486,11 @@ class Appr(object):
         print(f"new_basis_tensor shape {new_basis_tensor.shape}")
 
         # (f) Ortonormalise the whole memorized basis
-        if self.config.is_split:
-            n_params = count_parameter(self.model.linear) #rewrite function to replace linear
-        else:
-            n_params = count_parameter(self.model)
+        # if self.config.is_split:
+        #     n_params = count_parameter(self.model) #rewrite function to replace linear
+        # else:
+        #     n_params = count_parameter(self.model)
+        n_params = count_parameter(self.model)
         self.ogd_basis = torch.empty(n_params, 0)
         self.ogd_basis = self.to_device(self.ogd_basis)
 
