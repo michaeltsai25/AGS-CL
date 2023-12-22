@@ -243,13 +243,16 @@ class Appr(object):
         test_loss, test_acc = self.eval(t, xvalid, yvalid)
         
         #check to make sure loader is correct
-        loader = torch.utils.data.DataLoader(self.task_memory[self.task_count],
-                                                                            batch_size=self.config.batch_size,
-                                                                            shuffle=True,
-                                                                            num_workers=2)
+        # task_output_space, n_tasks, train_dataset_splits, val_dataset_splits = prepare_dataloaders(args)
+        
+        # task_names = sorted(list(task_output_space.keys()), key=int)
+        # task_name = task_names[t]
+        # train_loader = torch.utils.data.DataLoader(train_dataset_splits[task_name],
+        #                                                batch_size=args.batch_size, shuffle=True,
+        #                                                num_workers=2)
         self.model_old = deepcopy(self.model)
         self.model_old.train()
-        self.update_ogd_basis(loader) #replace this with full train loader
+        self.update_ogd_basis((xtrain, ytrain, t))
         # utils.freeze_model(self.model_old) # Freeze the weights
         return
 
@@ -261,7 +264,8 @@ class Appr(object):
         r=torch.LongTensor(r).cpu()
 
         # Loop batches
-        for i in range(0,len(r),self.sbatch):
+        # for i in range(0,len(r),self.sbatch):
+        for i in range(0, self.sbatch * 2, self.sbatch):
             if i+self.sbatch<=len(r): b=r[i:i+self.sbatch]
             else: b=r[i:]
             images=x[b]
@@ -301,7 +305,8 @@ class Appr(object):
             r = torch.LongTensor(r).cpu()
 
             # Loop batches
-            for i in range(0,len(r),self.sbatch): 
+            # for i in range(0,len(r),self.sbatch): 
+            for i in range(0, self.sbatch * 2, self.sbatch):
                 if i+self.sbatch<=len(r): b=r[i:i+self.sbatch]
                 else: b=r[i:]
                 images=x[b]
@@ -409,9 +414,10 @@ class Appr(object):
             inputs = self.to_device(inputs)
             targets = self.to_device(targets)
 
-            out = self.forward(x=inputs, task=(tasks))
+            out = model.forward(x=inputs) #check outputs
             label = targets.item()
-            pred = out[0, label]
+            # pred = out[0, label]
+            pred = out[tasks][0][label]
 
             optimizer.zero_grad()
             pred.backward()
@@ -445,6 +451,7 @@ class Appr(object):
             vector_to_parameters(cur_param, self.get_params_dict(last=True))
         
     def _update_mem(self, data_train_loader, val_loader=None):
+        # DATA_TRAIN_LOADER: (IMAGE: TENSOR, LABEL: ARRAY, TASK_ID: SCALAR)
         # 2.Randomly decide the images to stay in the memory
         self.task_count += 1
 
@@ -453,9 +460,9 @@ class Appr(object):
 
         # (c) Randomly choose some samples from new task and save them to the memory
         self.task_memory[self.task_count] = Memory()  # Initialize the memory slot
-        randind = torch.randperm(len(data_train_loader.dataset))[:num_sample_per_task]  # randomly sample some data
+        randind = torch.randperm(len(data_train_loader[0]))[:num_sample_per_task]  # randomly sample some data
         for ind in randind:  # save it to the memory
-            self.task_memory[self.task_count].append(data_train_loader.dataset[ind])
+            self.task_memory[self.task_count].append((data_train_loader[0][ind], data_train_loader[1][ind], data_train_loader[2]))
 
         ####################################### Grads MEM ###########################
 
@@ -480,7 +487,7 @@ class Appr(object):
 
         # (f) Ortonormalise the whole memorized basis
         if self.config.is_split:
-            n_params = count_parameter(self.model.linear)
+            n_params = count_parameter(self.model.linear) #rewrite function to replace linear
         else:
             n_params = count_parameter(self.model)
         self.ogd_basis = torch.empty(n_params, 0)
@@ -547,7 +554,7 @@ class Appr(object):
             loader = torch.utils.data.DataLoader(self.task_memory[self.task_count],
                                                                             batch_size=self.config.batch_size,
                                                                             shuffle=True,
-                                                                            num_workers=2)
+                                                                            num_workers=1)
             self.mem_loaders.append(loader)
 
     def update_ogd_basis(self, data_train_loader):
@@ -572,3 +579,9 @@ class Appr(object):
         #         return self.model.get_parameters()
         # else:
         #     return self.model.parameters()
+        
+    def to_device(self, tensor):
+        if self.config.gpu:
+            return tensor.cuda()
+        else:
+            return tensor

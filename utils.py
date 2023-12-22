@@ -12,10 +12,26 @@ from torch import inf
 import pandas as pd
 from PIL import Image
 from sklearn.feature_extraction import image
-from arguments import get_args
+# from arguments import Config
 from typing import Iterable, Optional
 from torch.nn.utils.convert_parameters import _check_param_device, parameters_to_vector, vector_to_parameters
-args = get_args()
+import os
+SLURM_TMPDIR = os.environ.get('SLURM_TMPDIR')
+
+from random import shuffle
+import dataloaders.base
+from dataloaders.datasetGen import SplitGen, PermutedGen, RotatedGen
+import agents
+
+import wandb
+
+from tap import Tap
+import numpy as np
+import os
+from tqdm import tqdm
+from typing import List
+import time
+# args = Config().parse_args()
 
 #review this function
 def gs_cal(t, x, y, criterion, model, sbatch=20):
@@ -34,7 +50,8 @@ def gs_cal(t, x, y, criterion, model, sbatch=20):
     # Compute
     model.train()
 
-    for i in range(0,x.size(0),sbatch):
+    # for i in range(0,x.size(0),sbatch):
+    for i in range(0, sbatch * 2, sbatch):
         b=torch.LongTensor(np.arange(i,np.min([i+sbatch,x.size(0)]))).cpu()
         images=x[b]
         target=y[b]
@@ -337,7 +354,7 @@ def project_vec(model, omega, proj_basis, gpu):
         grad_vec.append(torch.cat(layer_grad_vec))
         
     if proj_basis.shape[1] > 0:
-        dots = torch.matmul(grad_vec, proj_basis)  # basis_size
+        dots = torch.matmul(torch.cat(grad_vec), proj_basis)  # basis_size
         tot_grad = grad_vec - (omega[key]*dots)
     else:
         tot_grad = torch.cat(grad_vec)
@@ -364,9 +381,10 @@ def parameters_to_grad_vector(parameters):
     for param in parameters:
         # Ensure the parameters are located in the same device
         
-        param_device = _check_param_device(param, param_device)
+        param_device = _check_param_device(param[1], param_device)
         
-        vec.append(param.grad.view(-1))
+        if not 'last' in param[0]:
+            vec.append(param[1].grad.view(-1))
             
     return torch.cat(vec)
 
@@ -428,3 +446,61 @@ def count_parameter(model):
 def get_n_trainable(model):
     n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     return n_trainable
+
+def prepare_dataloaders(args):
+    # Prepare dataloaders
+    Dataset = dataloaders.base.__dict__[args.dataset]
+
+    # SPLIT CUB
+    if args.is_split_cub :
+        print("running split -------------")
+        from dataloaders.cub import CUB
+        Dataset = CUB
+        if args.train_aug :
+            print("train aug not supported for cub")
+            return
+        train_dataset, val_dataset = Dataset(args.dataroot)
+        train_dataset_splits, val_dataset_splits, task_output_space = SplitGen(train_dataset, val_dataset,
+                                                                               first_split_sz=args.first_split_size,
+                                                                               other_split_sz=args.other_split_size,
+                                                                               rand_split=args.rand_split,
+                                                                               remap_class=not args.no_class_remap)
+        n_tasks = len(task_output_space.items())
+    # Permuted MNIST
+    elif args.n_permutation > 0:
+        # TODO : CHECK subset_size
+        train_dataset, val_dataset = Dataset(args.dataroot, args.train_aug, angle=0, subset_size=args.subset_size)
+        print("Working with permuatations :) ")
+        train_dataset_splits, val_dataset_splits, task_output_space = PermutedGen(train_dataset, val_dataset,
+                                                                                  args.n_permutation,
+                                                                                  remap_class=not args.no_class_remap)
+        n_tasks = args.n_permutation
+    # Rotated MNIST
+    elif args.n_rotate > 0 or len(args.rotations) > 0 :
+        # TODO : Check subset size
+        train_dataset_splits, val_dataset_splits, task_output_space = RotatedGen(Dataset=Dataset,
+                                                                                 dataroot=args.dataroot,
+                                                                                 train_aug=args.train_aug,
+                                                                                 n_rotate=args.n_rotate,
+                                                                                 rotate_step=args.rotate_step,
+                                                                                 remap_class=not args.no_class_remap,
+                                                                                 rotations=args.rotations,
+                                                                                 subset_size=args.subset_size)
+        n_tasks = len(task_output_space.items())
+
+    # Split MNIST
+    else:
+        print("running split -------------")
+        # TODO : Check subset size
+        train_dataset, val_dataset = Dataset(args.dataroot, args.train_aug,
+                                             angle=0, subset_size=args.subset_size)
+        train_dataset_splits, val_dataset_splits, task_output_space = SplitGen(train_dataset, val_dataset,
+                                                                               first_split_sz=args.first_split_size,
+                                                                               other_split_sz=args.other_split_size,
+                                                                               rand_split=args.rand_split,
+                                                                               remap_class=not args.no_class_remap)
+        n_tasks = len(task_output_space.items())
+
+    print(f"task_output_space {task_output_space}")
+
+    return task_output_space, n_tasks, train_dataset_splits, val_dataset_splits
