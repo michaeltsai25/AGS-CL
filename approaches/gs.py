@@ -59,7 +59,7 @@ class Appr(object):
         #OGD INIT
         self.config = args
 
-        print(f"### The model has {count_parameter(self.model)} parameters ###")
+        print(f"### The model has {count_parameter(self.model)[0]} parameters ###")
 
         # # TODO : remove from init : added only for the NTK gen part ?
         # self.optimizer = self.optimizer = torch.optim.SGD(params=self.model.parameters(),
@@ -72,7 +72,8 @@ class Appr(object):
         # elif self.config.is_split :
         #     n_params = count_parameter(self.model.linear)
         else :
-            n_params = count_parameter(self.model)
+            n_params, n_params_list = count_parameter(self.model)
+            self.n_params_list = n_params_list
         self.ogd_basis = torch.empty(n_params, 0)
         # self.ogd_basis = None
         self.ogd_basis_ids = defaultdict(lambda: torch.LongTensor([]))
@@ -264,8 +265,8 @@ class Appr(object):
         r=torch.LongTensor(r).cpu()
 
         # Loop batches
-        # for i in range(0,len(r),self.sbatch):
-        for i in range(0, self.sbatch * 2, self.sbatch):
+        for i in range(0,len(r),self.sbatch):
+        #for i in range(0, self.sbatch * 2, self.sbatch):
             if i+self.sbatch<=len(r): b=r[i:i+self.sbatch]
             else: b=r[i:]
             images=x[b]
@@ -305,8 +306,8 @@ class Appr(object):
             r = torch.LongTensor(r).cpu()
 
             # Loop batches
-            # for i in range(0,len(r),self.sbatch): 
-            for i in range(0, self.sbatch * 2, self.sbatch):
+            for i in range(0,len(r),self.sbatch): 
+            #for i in range(0, self.sbatch * 2, self.sbatch):
                 if i+self.sbatch<=len(r): b=r[i:i+self.sbatch]
                 else: b=r[i:]
                 images=x[b]
@@ -439,7 +440,7 @@ class Appr(object):
         #     print(param.view(-1))
         cur_param = parameters_to_vector(parameters=self.model.parameters())
         #grad_vec = parameters_to_grad_vector(parameters=self.get_params_dict(last=False))
-        new_vec = project_vec(model=self.model, omega=self.omega, proj_basis=self.ogd_basis, gpu=self.config.gpu) #previously new_grad_vec
+        new_vec = project_vec(model=self.model, omega=self.omega, proj_basis=self.ogd_basis, n_params_list=self.n_params_list, gpu=self.config.gpu) #previously new_grad_vec
         #cur_param -= self.config.lr * new_grad_vec
         grad_vector_to_parameters(new_vec, self.get_params_dict(last=False))
 
@@ -490,7 +491,7 @@ class Appr(object):
         #     n_params = count_parameter(self.model) #rewrite function to replace linear
         # else:
         #     n_params = count_parameter(self.model)
-        n_params = count_parameter(self.model)
+        n_params, _ = count_parameter(self.model)
         self.ogd_basis = torch.empty(n_params, 0)
         self.ogd_basis = self.to_device(self.ogd_basis)
 

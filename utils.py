@@ -337,11 +337,18 @@ def orthonormalize(vectors, gpu, normalize=True, start_idx=0):
     return vectors
 
 #TODO: run debugger to check code
-def project_vec(model, omega, proj_basis, gpu):
+def project_vec(model, omega, proj_basis, n_params_list, gpu):
     tot_grad = torch.empty(0)
     grad_vec = []
+    if omega is not None:
+        unfold_omega = []
+        for key in omega:
+            if 'last' in key or 'bias' in key:
+                continue
+            unfold_omega.append(omega[key].unsqueeze(-1).repeat(1, n_params_list[key][-1]).view(-1))
+        unfold_omega = torch.cat(unfold_omega)
     for name, param in model.named_parameters():
-        if 'last' in name:
+        if 'last' in name or 'bias' in name:
             continue
         key = name.split('.')[0]
         temp = torch.ones_like(param)
@@ -354,8 +361,11 @@ def project_vec(model, omega, proj_basis, gpu):
         grad_vec.append(torch.cat(layer_grad_vec))
         
     if proj_basis.shape[1] > 0:
-        dots = torch.matmul(torch.cat(grad_vec), proj_basis)  # basis_size
-        tot_grad = grad_vec - (omega[key]*dots)
+        grad_vec = torch.cat(grad_vec)
+        strength = torch.matmul(grad_vec, proj_basis)  # basis_size
+        projected_grad = proj_basis * strength
+        scaled_grad_dir = (unfold_omega.unsqueeze(1) * projected_grad).sum(1)
+        tot_grad = grad_vec - scaled_grad_dir   # need to fix this issue
     else:
         tot_grad = torch.cat(grad_vec)
     '''
@@ -383,7 +393,7 @@ def parameters_to_grad_vector(parameters):
         
         param_device = _check_param_device(param[1], param_device)
         
-        if not 'last' in param[0]:
+        if not 'last' in param[0] and not 'bias' in param[0]:
             vec.append(param[1].grad.view(-1))
             
     return torch.cat(vec)
@@ -400,7 +410,7 @@ def grad_vector_to_parameters(vec, parameters):
     # Pointer for slicing the vector for each parameter
     pointer = 0
     for name, param in parameters:
-        if 'last' in name:
+        if 'last' in name or 'bias' in name:
             continue
         # Ensure the parameters are located in the same device
         param_device = _check_param_device(param, param_device)
@@ -440,7 +450,18 @@ def validate(testloader, model, gpu, size):
 
 
 def count_parameter(model):
-    return sum(p.numel() for p in model.parameters())
+    param_sum = 0
+    param_sum_list = {}
+    for n, p in model.named_parameters():
+        if 'bias' in n or 'last' in n:
+            continue
+        n = n.split('.')[:-1]
+        n = '.'.join(n)
+        param_sum += p.numel()
+        param_sum_list[n] = [param_sum]
+        param_sum_list[n].extend(p.view(p.size(0), -1).shape)
+    return param_sum, param_sum_list
+    # return sum(p.numel() for p in model.parameters())
 
 
 def get_n_trainable(model):
